@@ -6,6 +6,8 @@ import fishchips.util
 import matplotlib.pyplot as plot
 from multiprocessing import Pool
 
+# TODO: noise, mp, plotting, modularize
+
 
 class CMB_S4(Experiment):
     def __init__(self, f_sky=0.65, l_min=2, l_max=2500, verbose=False, noise_curves={}):
