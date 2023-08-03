@@ -29,7 +29,6 @@ class CMB_S4(Experiment):
             cl = model.lensed_cl(self.l_max)
         else:
             cl = model.raw_cl(self.l_max)
-        #print(cl)
 
         covmat = np.zeros((self.l_max+1, len(self.channels), len(self.channels)))
         for i in range(len(self.channels)):
@@ -41,7 +40,7 @@ class CMB_S4(Experiment):
 
     def get_dcov(self, inputs):
         derivatives = {}
-        for i,p in enumerate(inputs.params):
+        for i,p in enumerate(inputs.parameters):
             derivatives[p] = (self.get_cov(inputs.models_right[p]) - self.get_cov(inputs.models_left[p])) / (2*inputs.dx[i])
         return derivatives
 
@@ -58,71 +57,17 @@ class CMB_S4(Experiment):
         invs = np.linalg.inv(covs)
 
         print('making fisher...')
-        fisher = np.zeros((len(inputs.params), len(inputs.params)))
-        for j in range(len(inputs.params)):
+        fisher = np.zeros((len(inputs.parameters), len(inputs.parameters)))
+        for j in range(len(inputs.parameters)):
             for i in range(0, j+1):
-                multiplied = np.matmul(np.matmul(invs, dcovs[inputs.params[i]]), np.matmul(invs, dcovs[inputs.params[j]]))
+                multiplied = np.matmul(np.matmul(invs, dcovs[inputs.parameters[i]]), np.matmul(invs, dcovs[inputs.parameters[j]]))
                 fisher[i, j] = fisher[j, i] = np.dot(np.trace(multiplied, axis1=1, axis2=2), coeffs)
         return fisher
 
-class Model:
-    def __init__(self, params, channels='te'):
-        self.params = params
-        self.channels = channels
-        self.model = Class()
-        self.model.set(params)
-        self.model.compute()
-    def clean(self):
-        self.model.struct_cleanup()
-        self.model.empty()
-
-    def covmats(self, noise=dict(), l_max=2000):
-        # noise should be {channel:array}
-        cl = self.model.lensed_cl(l_max)
-        print(cl)
-        covmat = np.zeros((l_max+1, len(self.channels), len(self.channels)))
-        for i in range(len(self.channels)):
-            for j in range(0,i+1):
-                chan_name = self.channels[j]+self.channels[i]
-                covmat[:, i, j] = cl[chan_name] + noise.get(chan_name, 0)
-                covmat[:, j, i] = cl[chan_name] + noise.get(chan_name, 0)
-        return covmat
-
-    def d_covmat(self, dparam, noise=dict(), stepsize=0.01, l_min=2, l_max=2000):
-        left = self.params.copy()
-        left[dparam] -= stepsize
-        mleft = Model(left).covmats(noise, l_max=l_max)
-
-        right = self.params.copy()
-        right[dparam] += stepsize
-        mright = Model(right).covmats(noise, l_max=l_max)
-
-        return ((mright - mleft) / (2*stepsize))[l_min:]
-
-
-    def fisher(self, inputs=('omega_b', 'omega_cdm', 'h'), f_sky=1, l_min=2, l_max=2000):
-        coeffs = (2*np.arange(l_min, l_max+1)+1)/2 * f_sky
-        covs = self.covmats()[l_min:]
-        invs = np.linalg.inv(covs)
-        print("making derivatives...")
-        derivs = {inp: self.d_covmat(inp) for inp in inputs}
-
-        print('making fishers...')
-        fisher = np.zeros((len(inputs), len(inputs)))
-        for i in range(len(inputs)):
-            for j in range(len(inputs)):
-                step1 = np.matmul(invs, derivs[inputs[j]])
-                step2 = np.matmul(derivs[inputs[i]], step1)
-                step3 = np.matmul(invs, step2)
-                step4 = np.trace(step3, axis1=1, axis2=2)
-                fisher[i, j] = np.sum(step4 * coeffs)
-        return fisher
-
 class Inputs:
-    def __init__(self, classy_template, params, fiducial, dx, compute_mp=False):
+    def __init__(self, classy_template, params, fiducial, dx):
         self.params = params
         self.classy_params = classy_template | dict(zip(params, fiducial))
-        self.compute_mp = compute_mp
 
         self.fiducial = np.array(fiducial)
         self.dx = np.array(dx)
@@ -142,73 +87,20 @@ class Inputs:
             right[p] += self.dx[i]
             self.models_right[p].set(right)
 
+    def compute(self):
+        self.compute_fid()
+        self.compute_rightleft()
+
     def compute_fid(self):
         self.model_fid.compute()
 
     def compute_rightleft(self):
-        if self.compute_mp:
-            with Pool(None) as pool:
-                for model in self.models_left.values():
-                    pool.apply_async(model.compute)
-                for model in self.models_right.values():
-                    pool.apply_async(model.compute)
-                pool.close()
-                pool.join()
-        else:
-            for model in self.models_left.values():
-                model.compute()
-            for model in self.models_right.values():
-                model.compute()
+        for model in self.models_left.values():
+            model.compute()
+        for model in self.models_right.values():
+            model.compute()
 
 
-"""
-OFFICIAL 18.2s
-[[ 9.69010597e+23  1.72513230e+15 -3.95366149e+15]
- [ 1.72513230e+15  3.92145650e+06 -7.08319138e+06]
- [-3.95366149e+15 -7.08319138e+06  1.64234074e+07]]
-
-"""
-
-"""
-UNOFFICIAL 17.9s
-[[ 9.69794363e+23  1.72729118e+15 -3.95684717e+15]
- [ 1.72729118e+15  3.92743841e+06 -7.09200414e+06]
- [-3.95684717e+15 -7.09200414e+06  1.64363986e+07]]
- 
-[[ 9.69808507e+23  1.72716250e+15 -3.94810141e+15]
- [ 1.72716250e+15  3.92674236e+06 -7.07550820e+06]
- [-3.94810141e+15 -7.07550820e+06  1.63612089e+07]]
-"""
-
-"""
-produced equal covs (please verify for all?)
-
-contrib at 998 official
-0 0 2.9173303374270546e+20
-0 1 303949301169.05206
-0 2 -1229470744078.2896
-1 1 319.8539391879595
-1 2 -1277.0941990790868
-2 2 5188.434750574307
-
-0 0 2.9173303374270582e+20
-0 1 303949301169.0525
-0 2 -1229470744078.29
-1 1 319.85393918796
-1 2 -1277.0941990790877
-2 2 5188.434750574306
-
-
-dlib
-[[3204994.92761979  -68700.01495644]
- [ -68700.01495644  118075.50803467]]
- 
-doff
-[[3204994.92761978  -68700.01495644]
- [ -68700.01495644  118075.50803467]]
-
-
-"""
 
 if __name__ == "__main__":
     import time
@@ -224,7 +116,7 @@ if __name__ == "__main__":
     )
 
     print('fid')
-    obs.compute_fid()
+    obs.compute()
 
     experiment = CMB_S4()
     print('fish')

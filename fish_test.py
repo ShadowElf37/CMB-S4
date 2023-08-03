@@ -60,7 +60,7 @@ class CMB_Primary(Experiment):
         for l in range(self.l_min, self.l_max + 1):
             self.noise_T[l] = 0
             self.noise_P[l] = 0
-            """
+
             for channel in range(self.num_channels):
                 self.noise_T[l] += self.sigma_T[channel] ** -2 * \
                                    np.exp(
@@ -70,12 +70,12 @@ class CMB_Primary(Experiment):
                                        -l * (l + 1) * self.theta_fwhm[channel] ** 2 / 8. / np.log(2.))
             self.noise_T[l] = 1 / self.noise_T[l]
             self.noise_P[l] = 1 / self.noise_P[l]
-            """
 
-        #self.noise_T[self.ells < self.l_min] = 1e100
-        #self.noise_P[self.ells < self.l_min] = 1e100
-        #self.noise_T[self.ells > self.l_max] = 1e100
-        #self.noise_P[self.ells > self.l_max] = 1e100
+
+        self.noise_T[self.ells < self.l_min] = 1e100
+        self.noise_P[self.ells < self.l_min] = 1e100
+        self.noise_T[self.ells > self.l_max] = 1e100
+        self.noise_P[self.ells > self.l_max] = 1e100
 
     def compute_fisher_from_spectra(self, fid, df, pars):
         """
@@ -98,6 +98,7 @@ class CMB_Primary(Experiment):
             Fisher analysis.
 
         """
+        fishtime = time.time()
         npar = len(pars)
         self.fisher = np.zeros((npar, npar))
         self.fisher_ell = np.zeros(self.l_max)
@@ -125,6 +126,7 @@ class CMB_Primary(Experiment):
             self.fisher[i, j] = fisher_ij
             self.fisher[j, i] = fisher_ij
 
+        print('F:', time.time()-fishtime)
         return self.fisher
 
     def get_fisher(self, obs, lensed_Cl=True):
@@ -210,7 +212,7 @@ for par, par_left, par_right in zip(obs.parameters, obs.left, obs.right):
 
 # compute the Fisher matrix with a Planck-like experiment
 example_Planck = CMB_Primary(
-    theta_fwhm=[7.], sigma_T=[0], sigma_P=[0],
+    theta_fwhm=[7.], sigma_T=[33.], sigma_P=[56.],
     f_sky=0.65, l_min=2, l_max=2500)
 fisher = example_Planck.get_fisher(obs)
 
@@ -218,6 +220,6 @@ print(fisher)
 print(time.time()-t1)
 
 # use the plotting utility to get some dope ellipses for 1,2 sigma.
-#cov = np.linalg.inv(fisher)
-#fishchips.util.plot_triangle(obs, cov);
-#plot.show()
+cov = np.linalg.inv(fisher)
+fishchips.util.plot_triangle(obs, cov);
+plot.show()
