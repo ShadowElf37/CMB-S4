@@ -65,12 +65,13 @@ class CMB_S4(Experiment):
         return fisher
 
 class Inputs:
-    def __init__(self, classy_template, params, fiducial, dx):
+    def __init__(self, classy_template, params, fiducial, dx_left, dx_right):
         self.params = params
         self.classy_params = classy_template | dict(zip(params, fiducial))
 
         self.fiducial = np.array(fiducial)
-        self.dx = np.array(dx)
+        self.dx_left = np.array(dx_left)
+        self.dx_right = np.array(dx_right)
 
         self.model_fid = Class()
         self.models_left = {p:Class() for p in params}
@@ -80,11 +81,11 @@ class Inputs:
         self.model_fid.set(self.classy_params)
         for i,p in enumerate(self.params):
             left = self.classy_params.copy()
-            left[p] -= self.dx[i]
+            left[p] -= self.dx_left[i]
             self.models_left[p].set(left)
 
             right = self.classy_params.copy()
-            right[p] += self.dx[i]
+            right[p] += self.dx_right[i]
             self.models_right[p].set(right)
 
     def compute(self):

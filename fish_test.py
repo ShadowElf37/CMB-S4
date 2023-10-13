@@ -183,12 +183,12 @@ class CMB_Primary(Experiment):
 t1 = time.time()
 
 # create an Observables object to store information for derivatives
-fid = np.array([2.1e-9, 0.968, 0.066])
+fid = np.array([10**-7,])
 obs = Observables(
-    parameters=['A_s', 'n_s', 'tau_reio'],
+    parameters=['DM_annihilation_efficiency',],
     fiducial=fid,
-    left=fid-np.array([1.e-10, 2.e-02, 1.e-02]),
-    right=fid+np.array([1.e-10, 2.e-02, 1.e-02]))
+    left=fid-np.array([-10**-5,]),
+    right=fid+np.array([10**-5,]))
 
 # generate a template CLASS python wrapper configuration
 classy_template = {'output': 'tCl pCl lCl',
