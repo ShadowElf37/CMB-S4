@@ -5,20 +5,50 @@ import fishchips.util
 import matplotlib.pyplot as plot
 from multiprocessing import Pool
 
-def white_noise(theta_fwhm=7., sigma_T=33., sigma_P=56., l_max=2500):
-    arcmin_to_radian = np.pi / 60. / 180.
-    theta_fwhm *= arcmin_to_radian
-    sigma_T *= arcmin_to_radian
-    sigma_P *= arcmin_to_radian
 
-    l = np.arange(0, l_max+1)
-    NT = sigma_T ** 2 * np.exp(l*(l+1) * theta_fwhm**2 / (8*np.log(2)))
-    NP = sigma_P ** 2 * np.exp(l * (l + 1) * theta_fwhm ** 2 / (8 * np.log(2)))
+class Noise:
+    CHANNELS = 'TT', 'EE', 'PP', 'TE'
 
-    return {'TT': NT, 'EE': NP}
+    def __init__(self, l_max=2500, **from_dict):
+        self.l = np.arange(0, l_max+1)
+        self.l_max = l_max
+        self.N = {chan: from_dict.get(chan, np.zeros_like(self.l))[0:l_max + 1] for chan in self.CHANNELS}
+
+    def __getitem__(self, item):
+        return self.N.get(item, 0)
+
+    def __add__(self, other):
+        # adds inverse variances
+        assert self.l_max == other.l_max
+        new_dict = {chan: 1/(1/self[chan] + 1/other[chan]) for chan in self.CHANNELS}
+        return Noise(l_max=self.l_max, **new_dict)
+
+    @staticmethod
+    def white_noise(theta_fwhm=(7.,), sigma_T=(33.,), sigma_P=(56.,), l_max=2500):
+        theta_fwhm = np.array(theta_fwhm, dtype=float)
+        sigma_T = np.array(sigma_T, dtype=float)
+        sigma_P = np.array(sigma_P, dtype=float)
+
+        if len(theta_fwhm) != len(sigma_T):
+            raise ValueError('Theta and at least sigma_T need matching lengths')
+
+        arcmin_to_radian = np.pi / 60. / 180.
+        theta_fwhm *= arcmin_to_radian
+        sigma_T *= arcmin_to_radian
+        sigma_P *= arcmin_to_radian
+
+        l = np.arange(0, l_max+1)
+        NT = np.zeros_like(l, dtype=float)
+        NP = np.zeros_like(l, dtype=float)
+        for i in range(len(sigma_T)):
+            NT += sigma_T[i] ** 2 * np.exp(l*(l+1) * theta_fwhm[i] ** 2 / (8*np.log(2)))
+        for i in range(len(sigma_P)):
+            NP += sigma_P[i] ** 2 * np.exp(l * (l + 1) * theta_fwhm[i] ** 2 / (8 * np.log(2)))
+
+        return Noise(TT=NT, EE=NP, l_max=l_max)
 
 class CMB_S4(Experiment):
-    def __init__(self, f_sky=0.65, l_min=2, l_max=2500, verbose=False, noise_curves={}):
+    def __init__(self, f_sky=0.65, l_min=2, l_max=2500, verbose=False, noise_curves: Noise=None):
         # NOISE SHOULD BE DIMENSIONFUL (µK^2)
         self.verbose = verbose
 
@@ -28,9 +58,9 @@ class CMB_S4(Experiment):
         self.l_max = l_max
         self.l = np.arange(self.l_min, self.l_max + 1)
 
-        self.channels = 'tep'
+        self.channels = 'TEP'
 
-        self.noise = noise_curves
+        self.noise = noise_curves or Noise(l_max=l_max)
         self.T_cmb = 1
 
     def get_cov(self, cl):
@@ -38,10 +68,10 @@ class CMB_S4(Experiment):
         for i in range(len(self.channels)):
             for j in range(0, i + 1):
                 chan_name = self.channels[j] + self.channels[i]
-                if chan_name in ['tp', 'ep']:
+                if chan_name in ['TP', 'EP']:
                     covmat[:, i, j] = covmat[:, j, i] = 0
                     continue
-                covmat[:, i, j] = covmat[:, j, i] = cl[chan_name] + self.noise.get(chan_name.upper(), 0)/self.T_cmb
+                covmat[:, i, j] = covmat[:, j, i] = cl[chan_name.lower()] + self.noise[chan_name]/self.T_cmb
         return covmat[self.l_min:]
 
     def get_dcov(self, inputs):
@@ -126,80 +156,38 @@ class Observables:
 
 
 
-if __name__ == "__main__" and 0:
+if __name__ == "__main__" and 1:
     import draft_modules.tools as tools
 
     els = np.arange(1, 100)
     nlfile1 = '/Users/yovel/PycharmProjects/CMB-S4/CMB-S4_DRAFT/results/s4_cmb_ilc.npy'
     nlfile2 = '/Users/yovel/PycharmProjects/CMB-S4/CMB-S4_DRAFT/products/20220726/s4wide_ilc_galaxy0_27-39-93-145-225-278_TT-EE_for7years.npy'
 
-    nlfile1 = '/Users/yovel/PycharmProjects/CMB-S4/CMB-S4_DRAFT/products/20220726/lensing_noise_curves/ilc/s4wide_lmin100_lmax5000.npy'
+    #nlfile1 = '/Users/yovel/PycharmProjects/CMB-S4/CMB-S4_DRAFT/products/20220726/lensing_noise_curves/ilc/s4wide_lmin100_lmax5000.npy'
 
-    nl_dic1, dic1 = tools.get_nldic(nlfile1, els)
+    nl_dic1 = tools.get_nldic(nlfile1, els)
     #nl_dic2, dic2 = tools.get_nldic(nlfile2, els)
     print(nl_dic1.keys())
 
+    ppfile = '/Users/yovel/PycharmProjects/CMB-S4/CMB-S4_DRAFT/products/20220726/lensing_noise_curves/ilc/s4wide_lmin100_lmax5000.npy'
+    ppf = np.load(ppfile, allow_pickle=1, encoding='latin1')
+    nl_dic2 = ppf.item()
+    print(nl_dic2.keys())
 
 
-if __name__ == "__main__" and 1:
+
+    print(nl_dic2['cl_kk'][:200])
+    print(nl_dic2['els'])
+
+
+
+
+if __name__ == "__main__" and 0:
     cls = Class()
     cls.set({'output': 'tCl pCl lCl',
             'l_max_scalars': 2000,
             'lensing': 'yes',
-            'DM_annihilation_efficiency': 1.0e-7,
+            'DM_annihilation_efficiency': 0,
         })
     cls.compute()
     print(cls.lensed_cl(2000))
-
-if __name__ == "__main__" and 0:
-    import time
-    t1 = time.time()
-
-    LMAX = 100
-
-    fid = np.array([0.1197, 0.0222, 2.196e-9, 0.9655, 0.06, 0.010409*100, 0])
-    dx_left = np.array([0.0030,0.0008,0.1e-9,0.010,0.020,0.000050*100,0])
-    dx_right = np.array([0.0030,0.0008,0.1e-9,0.010,0.020,0.000050*100,1.0e-5])
-
-    obs = Observables(
-        classy_template={
-            'output': 'tCl pCl lCl',
-            'l_max_scalars': LMAX,
-            'lensing': 'no',
-            'DM_annihilation_efficiency': 0,
-            #'DM_annihilation_variation': 0,
-            #'DM_annihilation_z': 600,
-            #'DM_annihilation_zmax': 2500,
-            #'DM_annihilation_zmin': 30
-        },
-        params=['omega_cdm', 'omega_b', 'A_s', 'n_s', 'tau_reio', '100*theta_s', 'DM_annihilation_efficiency'],
-        fiducial=fid,
-        dx_left=dx_left,
-        dx_right=dx_right
-    )
-
-    import draft_modules.tools as tools
-    els = np.arange(0, LMAX+1)
-    nlfile = '/Users/yovel/PycharmProjects/CMB-S4/CMB-S4_DRAFT/products/20220726/s4wide_ilc_galaxy0_27-39-93-145-225-278_TT-EE_for7years.npy'
-    nl_dic = tools.get_nldic(nlfile, els)
-
-
-    if 1:
-        obs.compute(l_max=LMAX, lensed_cl=False)
-
-        experiment = CMB_S4(noise_curves=nl_dic, l_max=LMAX)
-        f = experiment.get_fisher(obs)
-
-        print('Time elapsed:', time.time()-t1)
-
-        cov = np.linalg.inv(f)
-
-        import plot_triangle
-
-        SCALES = [0, 0, 9, 0, 0, 2, 7]
-        FID = np.array([0.1197, 0.0222, 2.196e-9, 0.9655, 0.06, 0.010409*100, 0])
-        PANN = r'$p_{\mathrm{ann}}$ ($10^{-7}\mathrm{m}^3\mathrm{s}^{-1}\mathrm{kg}^{-1}$)'
-        LABELS = [r'$\Omega_{DM} h^2$', r'$\Omega_b h^2$', r'$10^{9}A_s$', r'$n_s$', r'$\tau_{reio}$', r'$10^{2}\theta_s$',PANN]
-        plot_triangle.triplot(LABELS, SCALES, FID, cov)
-
-        plot.show()
